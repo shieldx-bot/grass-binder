@@ -2662,4 +2662,5 @@ def main():
     except KeyboardInterrupt:
         print("\n[Đã dừng vòng lặp]")
 
-main()
+if __name__ == "__main__":
+    main()
