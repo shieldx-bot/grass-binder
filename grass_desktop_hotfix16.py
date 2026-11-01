@@ -124,7 +124,10 @@ TABS_BEFORE_EMAIL = 0
 TABS_BEFORE_PASSWORD = 1
 
 SLEEP_SECONDS = 600
-MAX_LOOPS = None
+# HOTFIX 16.2: cho phép đặt vòng lặp qua env (GitHub Actions cần kết thúc
+# sạch trước timeout job 6h) — ví dụ GRASS_MAX_LOOPS=33 -> ~5h30m rồi thoát 0.
+_ml = os.environ.get("GRASS_MAX_LOOPS", "").strip()
+MAX_LOOPS = int(_ml) if _ml.isdigit() and int(_ml) > 0 else None
 RUN_MODE = True
 AUTO_UPDATE = True
 DEVICE_NAME = ""
