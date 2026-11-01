@@ -91,7 +91,7 @@ except Exception:
     BASE = "/tmp"
 
 print(f"ENV: colab={ON_COLAB} kaggle={ON_KAGGLE} base={BASE}")
-print("[hotfix] GRASS HOTFIX 16 — earning_status() + fix screenshot mss")
+print("[hotfix] GRASS HOTFIX 16.1 — fix EGL_BAD_PARAMETER (mesa software render cho container không GPU)")
 print("[hotfix] nếu không thấy dòng này trong log = bạn đang chạy cell CŨ!")
 
 # ---------- CONFIG ----------
@@ -911,7 +911,12 @@ def install_deps():
         )
     )
 
-    if _fast and (not os.path.exists(APP_BIN) or not missing_libs()):
+    # HOTFIX 16.1: cache cũ (trước 16.1) thiếu mesa -> không được nhảy nhanh
+    _mesa_ok = bool(
+        glob.glob(f"{LIBROOT}/usr/lib/x86_64-linux-gnu/dri/*_dri.so")
+        or glob.glob(f"{LIBROOT}/usr/lib/x86_64-linux-gnu/libEGL_mesa.so*")
+    )
+    if _fast and _mesa_ok and (not os.path.exists(APP_BIN) or not missing_libs()):
         print("[deps] đủ libs cache — bỏ qua tải/giải nén lại")
         _patch_webkit_paths()
         return
@@ -923,6 +928,11 @@ def install_deps():
         "python3-dbus", "python3-gi", "bubblewrap",
         "xvfb", "x11-xkb-utils", "xkb-data",
         "libayatana-appindicator3-1", "libappindicator3-1", "libdbusmenu-glib4", "libdbusmenu-gtk3-4",
+        # HOTFIX 16.1: mesa software rendering cho container KHÔNG GPU (mybinder...).
+        # libegl-mesa0 + libgl1-mesa-dri là driver EGL/GL phần mềm (llvmpipe/swrast) —
+        # chúng nằm ở Recommends nên closure Depends không kéo theo -> WebKitGTK chết
+        # với "Could not create default EGL display: EGL_BAD_PARAMETER. Aborting..."
+        "libegl-mesa0", "libgl1-mesa-dri", "libglx-mesa0", "libgl1", "libegl1",
     ])
 
 # ---------- APP DOWNLOAD / MANIFEST ----------
@@ -1950,6 +1960,17 @@ def launch_app(force=False):
 
     sys_env = _clean_system_env()
 
+    # HOTFIX 16.1: ép render phần mềm cho container không GPU (mybinder).
+    # LIBGL_ALWAYS_SOFTWARE -> mesa dùng llvmpipe/swrast thay vì cố mở /dev/dri.
+    # __EGL_VENDOR_LIBRARY_FILENAMES -> glvnd tìm driver EGL trong thư viện vừa extract.
+    _dri = f"{LIBROOT}/usr/lib/x86_64-linux-gnu/dri"
+    _mesa_vendor = f"{LIBROOT}/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+    gl_env = {"LIBGL_ALWAYS_SOFTWARE": "1", "GALLIUM_DRIVER": "llvmpipe"}
+    if os.path.isdir(_dri):
+        gl_env["LIBGL_DRIVERS_PATH"] = _dri
+    if os.path.exists(_mesa_vendor):
+        gl_env["__EGL_VENDOR_LIBRARY_FILENAMES"] = _mesa_vendor
+
     grass_env = dict(
         sys_env,
         DISPLAY=f":{DISPLAY_NUM}",
@@ -1961,6 +1982,7 @@ def launch_app(force=False):
         GDK_BACKEND="x11",
         XDG_RUNTIME_DIR=xdg,
         HOME=HOME,
+        **gl_env,
     )
 
     # DBus riêng, chạy bằng env sạch
